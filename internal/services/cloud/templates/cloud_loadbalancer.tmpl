@@ -1,21 +1,27 @@
 🚀 Load balancer {{.ServiceName}}
 =======
 
-_{{index .Result "name"}}_
+_{{index .Result "currentState" "name"}}_
 
 ## General information
 
-**Region**:              {{index .Result "region"}}
-**Operating status**:    {{index .Result "operatingStatus"}}
-**Provisioning status**: {{index .Result "provisioningStatus"}}
-**Flavor**:              {{if index .Result "flavor"}}{{index .Result "flavor" "name"}} (ID: {{index .Result "flavorId"}}){{else}}{{index .Result "flavorId"}}{{end}}
+**ID**:                  {{index .Result "id"}}
+**Status**:              {{index .Result "resourceStatus"}}
+{{if index .Result "currentState" "description"}}**Description**:         {{index .Result "currentState" "description"}}
+{{end}}**Region**:              {{index .Result "currentState" "location" "region"}}
+**Operating status**:    {{index .Result "currentState" "operatingStatus"}}
+**Provisioning status**: {{index .Result "currentState" "provisioningStatus"}}
+**Flavor**:              {{index .Result "currentState" "flavor" "name"}}
 **Creation date**:       {{index .Result "createdAt"}}
+**Update date**:         {{index .Result "updatedAt"}}
 
-## Technical information
+## Network
 
-**VIP address**:        {{index .Result "vipAddress"}}
-**VIP network ID**:     {{index .Result "vipNetworkId"}}
-**VIP subnet ID**:      {{index .Result "vipSubnetId"}}
-{{if index .Result "floatingIp"}}**Floating IP**:        {{index .Result "floatingIp" "ip"}}{{end}}
+**VIP network ID**:     {{index .Result "currentState" "network" "id"}}
+**VIP subnet ID**:      {{index .Result "currentState" "network" "subnetId"}}
 
+| Address | Type |
+|---------|------|
+{{range index .Result "currentState" "network" "addresses"}}| {{.ip}} | {{.type}} |
+{{end}}
 💡 Use option -o json or -o yaml to get the raw output with all information
