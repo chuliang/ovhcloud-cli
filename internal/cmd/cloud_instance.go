@@ -512,18 +512,24 @@ still uses API v1, as API v2 does not support cross-region snapshots.`,
 	createAutobackupCmd.Flags().StringVar(&cloud.AutobackupCreateParams.Cron, "cron", "", "Unix Cron pattern (e.g. '0 0 * * *')")
 	createAutobackupCmd.Flags().IntVar(&cloud.AutobackupCreateParams.Rotation, "rotation", 0, "Number of backups to keep")
 	createAutobackupCmd.Flags().StringVar(&cloud.AutobackupCreateParams.Name, "name", "", "Workflow name")
+	createAutobackupCmd.Flags().StringVar(&cloud.AutobackupCreateParams.ImageName, "image-name", "", "Name prefix of the backup images (defaults to the workflow name)")
+	createAutobackupCmd.Flags().StringVar(&cloud.AutobackupCreateParams.DistantRegion, "distant-region", "", "Region to copy each backup to (cross-region backup)")
+	createAutobackupCmd.Flags().StringVar(&cloud.AutobackupCreateParams.DistantImageName, "distant-image-name", "", "Name of the backup images copied to the distant region")
 	_ = createAutobackupCmd.MarkFlagRequired("cron")
 	_ = createAutobackupCmd.MarkFlagRequired("rotation")
 	_ = createAutobackupCmd.MarkFlagRequired("name")
+	createAutobackupCmd.Flags().BoolVar(&flags.WaitForTask, "wait", false, "Wait for the backup workflow to be ready before exiting")
 	autobackupCmd.AddCommand(createAutobackupCmd)
 
-	autobackupCmd.AddCommand(&cobra.Command{
+	deleteAutobackupCmd := &cobra.Command{
 		Use:               "delete <instance_id> <backup_workflow_id>",
 		Short:             "Delete an automatic backup workflow",
 		ValidArgsFunction: completion.CloudResources("/v2/publicCloud/project/%s/compute/instance"),
 		Run:               cloud.DeleteAutobackup,
 		Args:              cobra.ExactArgs(2),
-	})
+	}
+	deleteAutobackupCmd.Flags().BoolVar(&flags.WaitForTask, "wait", false, "Wait for the backup workflow to be deleted before exiting")
+	autobackupCmd.AddCommand(deleteAutobackupCmd)
 
 	// Application access subcommand
 	instanceCmd.AddCommand(&cobra.Command{

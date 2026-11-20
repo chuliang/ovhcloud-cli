@@ -51,118 +51,6 @@ func (ms *MockSuite) TestCloudInstanceApplicationAccessCmd(assert, require *td.T
 `)
 }
 
-func (ms *MockSuite) TestCloudInstanceAutobackupListCmd(assert, require *td.T) {
-	// First call to get instance region
-	httpmock.RegisterResponder(http.MethodGet,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/instance/fakeInstanceID",
-		httpmock.NewStringResponder(200, `{
-			"id": "fakeInstanceID",
-			"region": "GRA9",
-			"status": "ACTIVE"
-		}`).Once(),
-	)
-
-	// Then list autobackups for that region
-	httpmock.RegisterResponder(http.MethodGet,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/region/GRA9/workflow/backup",
-		httpmock.NewStringResponder(200, `[
-			{
-				"id": "backup-id-1",
-				"name": "daily-backup",
-				"instanceId": "fakeInstanceID",
-				"cron": "0 0 * * *",
-				"rotation": 7,
-				"nextExecutionTime": "2026-04-03T00:00:00Z"
-			}
-		]`).Once(),
-	)
-
-	out, err := cmd.Execute("cloud", "instance", "autobackup", "ls", "fakeInstanceID", "--cloud-project", "fakeProjectID")
-
-	require.CmpNoError(err)
-	assert.Contains(out, "daily-backup")
-	assert.Contains(out, "backup-id-1")
-}
-
-func (ms *MockSuite) TestCloudInstanceAutobackupDeleteCmd(assert, require *td.T) {
-	// First call to get instance region
-	httpmock.RegisterResponder(http.MethodGet,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/instance/fakeInstanceID",
-		httpmock.NewStringResponder(200, `{
-			"id": "fakeInstanceID",
-			"region": "GRA9",
-			"status": "ACTIVE"
-		}`).Once(),
-	)
-
-	httpmock.RegisterResponder(http.MethodDelete,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/region/GRA9/workflow/backup/backup-id-1",
-		httpmock.NewStringResponder(204, ``).Once(),
-	)
-
-	out, err := cmd.Execute("cloud", "instance", "autobackup", "delete", "fakeInstanceID", "backup-id-1", "--cloud-project", "fakeProjectID")
-
-	require.CmpNoError(err)
-	assert.Contains(out, "Autobackup workflow deleted")
-}
-
-func (ms *MockSuite) TestCloudInstanceAutobackupGetCmd(assert, require *td.T) {
-	httpmock.RegisterResponder(http.MethodGet,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/instance/fakeInstanceID",
-		httpmock.NewStringResponder(200, `{
-			"id": "fakeInstanceID",
-			"region": "GRA9",
-			"status": "ACTIVE"
-		}`).Once(),
-	)
-
-	httpmock.RegisterResponder(http.MethodGet,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/region/GRA9/workflow/backup/backup-id-1",
-		httpmock.NewStringResponder(200, `{
-			"id": "backup-id-1",
-			"name": "daily-backup",
-			"instanceId": "fakeInstanceID",
-			"cron": "0 0 * * *",
-			"rotation": 7
-		}`).Once(),
-	)
-
-	out, err := cmd.Execute("cloud", "instance", "autobackup", "get", "fakeInstanceID", "backup-id-1", "--cloud-project", "fakeProjectID")
-
-	require.CmpNoError(err)
-	assert.Contains(out, "daily-backup")
-	assert.Contains(out, "backup-id-1")
-}
-
-func (ms *MockSuite) TestCloudInstanceAutobackupCreateCmd(assert, require *td.T) {
-	httpmock.RegisterResponder(http.MethodGet,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/instance/fakeInstanceID",
-		httpmock.NewStringResponder(200, `{
-			"id": "fakeInstanceID",
-			"region": "GRA9",
-			"status": "ACTIVE"
-		}`).Once(),
-	)
-
-	httpmock.RegisterResponder(http.MethodPost,
-		"https://eu.api.ovh.com/v1/cloud/project/fakeProjectID/region/GRA9/workflow/backup",
-		httpmock.NewStringResponder(200, `{
-			"id": "backup-new-id",
-			"name": "my-backup",
-			"instanceId": "fakeInstanceID",
-			"cron": "0 0 * * *",
-			"rotation": 7
-		}`).Once(),
-	)
-
-	out, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
-		"--cron", "0 0 * * *", "--rotation", "7", "--name", "my-backup",
-		"--cloud-project", "fakeProjectID")
-
-	require.CmpNoError(err)
-	assert.Contains(out, "backup-new-id")
-}
-
 // instanceV2Response is a v2 instance as returned by the API (shape taken from
 // a real GET /v2/publicCloud/project/{projectId}/compute/instance/{instanceId}).
 const instanceV2Response = `{
@@ -1441,4 +1329,291 @@ func (ms *MockSuite) TestCloudInstanceSnapshotDeleteAPIErrorCmd(assert, require 
 
 	require.CmpError(err)
 	assert.Cmp(err.Error(), td.All(td.Contains("error deleting snapshot"), td.Contains("snapshot not found")))
+}
+
+const (
+	autobackupsURL      = "https://eu.api.ovh.com/v2/publicCloud/project/fakeProjectID/compute/autobackup"
+	autobackupInstances = "https://eu.api.ovh.com/v2/publicCloud/project/fakeProjectID/compute/instance"
+)
+
+const autobackupV2Response = `{
+	"id": "backup-id-1",
+	"resourceStatus": "READY",
+	"createdAt": "2026-11-17T10:00:00Z",
+	"targetSpec": {"name": "daily-backup", "imageName": "daily-backup", "cron": "0 0 * * *", "rotation": 7,
+		"instance": {"id": "fakeInstanceID"}, "location": {"region": "GRA9"}},
+	"currentState": {
+		"name": "daily-backup",
+		"imageName": "daily-backup",
+		"cron": "0 0 * * *",
+		"rotation": 7,
+		"instance": {"id": "fakeInstanceID"},
+		"location": {"region": "GRA9"},
+		"nextExecutionTime": "2026-11-18T00:00:00Z",
+		"lastExecutions": [{"id": "exec-1", "startedAt": "2026-11-17T00:00:00Z", "state": "SUCCESS"}]
+	}
+}`
+
+func (ms *MockSuite) TestCloudInstanceAutobackupListCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL,
+		httpmock.NewStringResponder(200, `[
+			{
+				"id": "backup-id-1",
+				"resourceStatus": "READY",
+				"targetSpec": {"name": "daily-backup", "cron": "0 0 * * *", "rotation": 7, "instance": {"id": "fakeInstanceID"}},
+				"currentState": {"name": "daily-backup", "cron": "0 0 * * *", "rotation": 7,
+					"instance": {"id": "fakeInstanceID"}, "nextExecutionTime": "2026-11-18T00:00:00Z"}
+			},
+			{
+				"id": "backup-id-other",
+				"resourceStatus": "READY",
+				"targetSpec": {"name": "other-backup", "cron": "0 1 * * *", "rotation": 3, "instance": {"id": "otherInstanceID"}},
+				"currentState": {"name": "other-backup", "cron": "0 1 * * *", "rotation": 3,
+					"instance": {"id": "otherInstanceID"}}
+			},
+			{
+				"id": "backup-id-creating",
+				"resourceStatus": "CREATING",
+				"targetSpec": {"name": "new-backup", "cron": "0 2 * * *", "rotation": 2, "instance": {"id": "fakeInstanceID"}},
+				"currentState": null
+			}
+		]`).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "ls", "fakeInstanceID", "--cloud-project", "fakeProjectID")
+
+	require.CmpNoError(err)
+	assert.Cmp(out, td.Re(`backup-id-1\s+│\s+daily-backup\s+│\s+0 0 \* \* \*\s+│\s+7\s+│\s+2026-11-18T00:00:00Z\s+│\s+READY`))
+	// Autobackups of other instances are filtered out
+	assert.Cmp(out, td.Not(td.Contains("other-backup")))
+	// A CREATING autobackup (null currentState) is listed, with empty live columns
+	assert.Cmp(out, td.Re(`backup-id-creating\s+│\s+│\s+│\s+│\s+│\s+CREATING`))
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupGetCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(200, autobackupV2Response).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "get", "fakeInstanceID", "backup-id-1", "--cloud-project", "fakeProjectID")
+
+	require.CmpNoError(err)
+	assert.Contains(out, "daily-backup")
+	assert.Contains(out, "backup-id-1")
+	assert.Contains(out, "GRA9")
+	assert.Contains(out, "SUCCESS")
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupGetOtherInstanceCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(200, autobackupV2Response).Once(),
+	)
+
+	_, err := cmd.Execute("cloud", "instance", "autobackup", "get", "otherInstanceID", "backup-id-1", "--cloud-project", "fakeProjectID")
+
+	require.CmpError(err)
+	assert.Contains(err.Error(), `autobackup "backup-id-1" does not belong to instance "otherInstanceID"`)
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupCreateCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupInstances+"/fakeInstanceID",
+		httpmock.NewStringResponder(200, `{"id": "fakeInstanceID", "targetSpec": {"location": {"region": "GRA9"}}}`).Once(),
+	)
+
+	// Without --image-name, the image name defaults to the workflow name
+	httpmock.RegisterMatcherResponder(http.MethodPost, autobackupsURL,
+		tdhttpmock.JSONBody(td.JSON(`{
+			"targetSpec": {
+				"name": "my-backup",
+				"imageName": "my-backup",
+				"cron": "0 0 * * *",
+				"rotation": 7,
+				"instance": {"id": "fakeInstanceID"},
+				"location": {"region": "GRA9"}
+			}
+		}`)),
+		httpmock.NewStringResponder(202, `{"id": "backup-new-id", "resourceStatus": "CREATING"}`).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
+		"--cron", "0 0 * * *", "--rotation", "7", "--name", "my-backup",
+		"--cloud-project", "fakeProjectID", "-o", "json")
+
+	require.CmpNoError(err)
+	assert.Cmp(json.RawMessage(out), td.JSON(`{
+		"message": "⚡️ Autobackup workflow backup-new-id creation started",
+		"details": {"id": "backup-new-id", "resourceStatus": "CREATING"}
+	}`))
+	// Without --wait, the command does not poll the autobackup
+	assert.Cmp(httpmock.GetCallCountInfo()["GET "+autobackupsURL+"/backup-new-id"], 0)
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupCreateWaitCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupInstances+"/fakeInstanceID",
+		httpmock.NewStringResponder(200, `{"id": "fakeInstanceID", "targetSpec": {"location": {"region": "GRA9"}}}`).Once(),
+	)
+	httpmock.RegisterResponder(http.MethodPost, autobackupsURL,
+		httpmock.NewStringResponder(202, `{"id": "backup-id-1", "resourceStatus": "CREATING"}`).Once(),
+	)
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(200, autobackupV2Response).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
+		"--cron", "0 0 * * *", "--rotation", "7", "--name", "daily-backup", "--wait",
+		"--cloud-project", "fakeProjectID", "-o", "json")
+
+	require.CmpNoError(err)
+	// details is the autobackup as fetched once READY, not the POST response
+	assert.Cmp(json.RawMessage(out), td.JSON(`{
+		"message": "✅ Autobackup workflow backup-id-1 created successfully",
+		"details": {"id": "backup-id-1", "resourceStatus": "READY", "createdAt": $1, "targetSpec": $1, "currentState": $1}
+	}`, td.Ignore()))
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupCreateWaitErrorCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupInstances+"/fakeInstanceID",
+		httpmock.NewStringResponder(200, `{"id": "fakeInstanceID", "targetSpec": {"location": {"region": "GRA9"}}}`).Once(),
+	)
+	httpmock.RegisterResponder(http.MethodPost, autobackupsURL,
+		httpmock.NewStringResponder(202, `{"id": "backup-id-1", "resourceStatus": "CREATING"}`).Once(),
+	)
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(200, `{"id": "backup-id-1", "resourceStatus": "ERROR"}`).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
+		"--cron", "0 0 * * *", "--rotation", "7", "--name", "daily-backup", "--wait",
+		"--cloud-project", "fakeProjectID")
+
+	require.CmpError(err)
+	assert.Cmp(err.Error(), td.All(td.Contains("failed to wait for autobackup workflow backup-id-1 creation"), td.Contains("ERROR")))
+	assert.Cmp(out, td.Not(td.Contains("created successfully")))
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupCreateAPIErrorCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupInstances+"/fakeInstanceID",
+		httpmock.NewStringResponder(200, `{"id": "fakeInstanceID", "targetSpec": {"location": {"region": "GRA9"}}}`).Once(),
+	)
+	httpmock.RegisterResponder(http.MethodPost, autobackupsURL,
+		httpmock.NewStringResponder(400, `{"class":"Client::BadRequest","message":"invalid cron expression"}`).Once(),
+	)
+
+	_, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
+		"--cron", "not a cron", "--rotation", "7", "--name", "my-backup",
+		"--cloud-project", "fakeProjectID")
+
+	require.CmpError(err)
+	assert.Cmp(err.Error(), td.All(td.Contains("error creating autobackup for instance"), td.Contains("invalid cron expression")))
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupCreateDistantCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupInstances+"/fakeInstanceID",
+		httpmock.NewStringResponder(200, `{"id": "fakeInstanceID", "targetSpec": {"location": {"region": "GRA9"}}}`).Once(),
+	)
+
+	httpmock.RegisterMatcherResponder(http.MethodPost, autobackupsURL,
+		tdhttpmock.JSONBody(td.JSON(`{
+			"targetSpec": {
+				"name": "my-backup",
+				"imageName": "my-images",
+				"cron": "0 0 * * *",
+				"rotation": 7,
+				"instance": {"id": "fakeInstanceID"},
+				"location": {"region": "GRA9"},
+				"distant": {"region": "SBG5", "imageName": "my-remote-images"}
+			}
+		}`)),
+		httpmock.NewStringResponder(200, `{"id": "backup-new-id", "resourceStatus": "CREATING"}`).Once(),
+	)
+
+	_, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
+		"--cron", "0 0 * * *", "--rotation", "7", "--name", "my-backup", "--image-name", "my-images",
+		"--distant-region", "SBG5", "--distant-image-name", "my-remote-images",
+		"--cloud-project", "fakeProjectID")
+
+	require.CmpNoError(err)
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupCreateDistantIncompleteCmd(assert, require *td.T) {
+	// No responder: the command must fail before calling the API
+	_, err := cmd.Execute("cloud", "instance", "autobackup", "create", "fakeInstanceID",
+		"--cron", "0 0 * * *", "--rotation", "7", "--name", "my-backup", "--distant-region", "SBG5",
+		"--cloud-project", "fakeProjectID")
+
+	require.CmpError(err)
+	assert.Contains(err.Error(), "--distant-region and --distant-image-name must be given together")
+	assert.Cmp(httpmock.GetTotalCallCount(), 0)
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupDeleteCmd(assert, require *td.T) {
+	// One GET for the ownership check; without --wait, none after the DELETE
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(200, autobackupV2Response).Once(),
+	)
+	// The API answers 202 with the autobackup as it is after the request
+	httpmock.RegisterResponder(http.MethodDelete, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(202, `{"id": "backup-id-1", "resourceStatus": "DELETING"}`).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "delete", "fakeInstanceID", "backup-id-1", "--cloud-project", "fakeProjectID", "-o", "json")
+
+	require.CmpNoError(err)
+	// details carries the API answer, so a script can read resourceStatus
+	assert.Cmp(json.RawMessage(out), td.JSON(`{
+		"message": "⚡️ Autobackup workflow backup-id-1 deletion started",
+		"details": {"id": "backup-id-1", "resourceStatus": "DELETING"}
+	}`))
+	assert.Cmp(httpmock.GetCallCountInfo()["GET "+autobackupsURL+"/backup-id-1"], 1)
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupDeleteWaitCmd(assert, require *td.T) {
+	// First GET: ownership check. Then the polls: DELETING, then gone (404).
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.ResponderFromMultipleResponses([]*http.Response{
+			httpmock.NewStringResponse(200, autobackupV2Response),
+			httpmock.NewStringResponse(200, `{"id": "backup-id-1", "resourceStatus": "DELETING"}`),
+			httpmock.NewStringResponse(404, `{"class":"Client::NotFound","message":"autobackup not found"}`),
+		}),
+	)
+	httpmock.RegisterResponder(http.MethodDelete, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(202, `{"id": "backup-id-1", "resourceStatus": "DELETING"}`).Once(),
+	)
+
+	out, err := cmd.Execute("cloud", "instance", "autobackup", "delete", "fakeInstanceID", "backup-id-1", "--wait", "--cloud-project", "fakeProjectID")
+
+	require.CmpNoError(err)
+	assert.Contains(out, "✅ Autobackup workflow backup-id-1 deleted successfully")
+	assert.Cmp(httpmock.GetCallCountInfo()["GET "+autobackupsURL+"/backup-id-1"], 3)
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupDeleteWaitFailedCmd(assert, require *td.T) {
+	// ERROR after DELETING means the deletion itself failed
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.ResponderFromMultipleResponses([]*http.Response{
+			httpmock.NewStringResponse(200, autobackupV2Response),
+			httpmock.NewStringResponse(200, `{"id": "backup-id-1", "resourceStatus": "DELETING"}`),
+			httpmock.NewStringResponse(200, `{"id": "backup-id-1", "resourceStatus": "ERROR"}`),
+		}),
+	)
+	httpmock.RegisterResponder(http.MethodDelete, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(202, `{"id": "backup-id-1", "resourceStatus": "DELETING"}`).Once(),
+	)
+
+	_, err := cmd.Execute("cloud", "instance", "autobackup", "delete", "fakeInstanceID", "backup-id-1", "--wait", "--cloud-project", "fakeProjectID")
+
+	require.CmpError(err)
+	assert.Cmp(err.Error(), td.All(td.Contains("failed to wait for autobackup workflow backup-id-1 deletion"), td.Contains("deletion failed")))
+}
+
+func (ms *MockSuite) TestCloudInstanceAutobackupDeleteOtherInstanceCmd(assert, require *td.T) {
+	httpmock.RegisterResponder(http.MethodGet, autobackupsURL+"/backup-id-1",
+		httpmock.NewStringResponder(200, autobackupV2Response).Once(),
+	)
+
+	_, err := cmd.Execute("cloud", "instance", "autobackup", "delete", "otherInstanceID", "backup-id-1", "--cloud-project", "fakeProjectID")
+
+	require.CmpError(err)
+	assert.Contains(err.Error(), "does not belong to instance")
+	assert.Cmp(httpmock.GetCallCountInfo()["DELETE "+autobackupsURL+"/backup-id-1"], 0)
 }
